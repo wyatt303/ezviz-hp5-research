@@ -66,17 +66,54 @@ directly with a valid session token (e.g. via `pyezvizapi`) is simpler.
   operation — that would require root on the camera (GPIO unlock) and/or recovering
   the CAS key scheme from the decrypted `ezapp`.
 
-## Screen teardown (TODO — the current goal)
+## Screen teardown
 
 No public teardown of the HP5 indoor screen exists, and there is no FCC filing
 (EU/CE product) so no FCC internal photos. The rear terminals are only
 `+24VDC/GND` and the `DB-/DB+` 2-wire bus — **not** a debug port. Getting the
 screen's firmware / root requires opening the enclosure and finding a UART header
-on the PCB. Methodology from sibling EZVIZ devices:
+on the PCB.
+
+### What's on the board (observed 2026-10)
+
+The main PCB was opened and inspected. Key parts:
+
+| Ref | Part | Role |
+|---|---|---|
+| UF1 | `25Q128` (marking `MD AY2424 25Q128STG`), SOP-8 | **SPI NOR flash, 128 Mbit / 16 MB, 3.3 V, JEDEC 25-series.** Boot flash. A 2nd footprint (UF2) is unpopulated. |
+| (under main shield) | not yet read | Main SoC + DRAM (display/multimedia class, distinct from the camera's Fullhan). Remove the large metal can to read markings. |
+| U1 | module w/ QR code, 40.0 MHz crystal (`T4L`) | Likely the WiFi (+BT) SoC/module. |
+| UE3 | **Motorcomm YT8510C** | 10/100 Ethernet PHY. |
+| UE2 | **Realtek RTL8201F** | 10/100 Ethernet PHY. |
+| X5 | 25.0 MHz crystal | Ethernet PHY reference clock. |
+| J3 | CR2032 coin cell | RTC backup. |
+| UV1 / LV1 / LV9 | `JMS116F`, `SS310A`, 10 µH (`100`), `3756` buck | 24 V → rail DC-DC conversion. |
+| WE 251 | Würth magnetics | Line transformer (likely for the 2-wire bus / Ethernet). |
+
+- **A UART header is silkscreened `Debug`** (with a direction arrow, next to `JP2`)
+  — the realistic root path. Probe the connector for GND (continuity to ground/shield),
+  VCC (steady ~3.3 V), TX (idles ~3.3 V, bursts at boot) and RX; attach a **3.3 V**
+  USB-UART, most likely **115200 8N1**. The boot log should reveal the SoC, bootloader,
+  and the full partition map in one shot.
+- **The 16 MB UF1 NOR can be dumped offline** with a SOIC-8 clip + CH341A/flashrom
+  (or a Pi Pico running `pico-serprog`); `flashrom` auto-detects it by JEDEC ID.
+  In-circuit reads may be corrupted by the SoC holding the bus — if so, hold the SoC
+  in reset or desolder the chip. `binwalk` the dump for U-Boot + env (bootargs) and
+  any carveable kernel/rootfs.
+- **Capacity note:** 16 MB NOR is tight for a full 7" Linux UI, so either the rootfs
+  is a compressed squashfs in this NOR, or there is an additional eMMC/NAND under the
+  main shield. The UART boot log / partition map will settle this.
+- **Dual Ethernet PHYs (YT8510C + RTL8201F) + the WE line transformer + the 2-wire
+  `DB-/DB+` terminal strongly suggest the camera link is Ethernet/IP carried over the
+  2-wire bus** (a 2-wire extender), not a bespoke serial protocol. That is consistent
+  with the outdoor unit being an ordinary EZVIZ IP camera (RTSP/CAS). Bench-confirm.
+
+### Methodology from sibling EZVIZ devices
 
 - [EZVIZ DVR rooting](https://mattj.uk/blog/ezviz-dvr-root/) — UART header, interrupt U-Boot, `sf read` + TFTP flash dump.
 - [EZVIZ BD-2402B1](https://blog.back.engineering/20/01/2022/) — U-Boot 115200, `rdinit=/bin/sh`.
 - [UART/U-Boot intro](https://voidstarsec.com/blog/uart-uboot-and-usb), [SPI flash extraction](https://wrongbaud.github.io/posts/router-teardown/).
 
-Open questions for the screen: SoC/platform (likely a display-class SoC, different
-from the camera's Fullhan), whether U-Boot is password-locked, partition layout.
+Open questions remaining for the screen: the exact SoC/DRAM part (under the shield),
+the `Debug` header pinout + baud, whether U-Boot is password-locked, the partition
+layout, and whether there is an eMMC/NAND in addition to the 16 MB NOR.

@@ -46,9 +46,11 @@ See [docs/findings.md](docs/findings.md) for details.
 ## Status
 
 - Camera (HPD5) firmware: obtained and statically analyzed (see docs).
-- **Indoor screen firmware: not yet obtained** — the cloud won't serve it while the
-  unit is current, and there's no FCC teardown to reference. Next step is a physical
-  UART dump of the screen. Help/photos welcome.
+- **Indoor screen: opened and board-mapped** — boot flash is a 16 MB `25Q128` SPI NOR
+  (UF1), there's a silkscreened `Debug` UART header, dual Ethernet PHYs (YT8510C +
+  RTL8201F) and a likely WiFi module; main SoC still under its shield. Firmware not yet
+  dumped — next step is the `Debug` UART (root + `dd`) and/or a SOIC-8 clip read of the
+  NOR. See [docs/findings.md](docs/findings.md#screen-teardown). Help/photos welcome.
 
 ## Disclaimer
 
