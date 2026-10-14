@@ -2,9 +2,11 @@
 *.dav
 *.img
 *.payload
+*.bin
 uImage
 mImage
 squashfs-root/
+jffs2-root/
 
 # Secrets / account data — never commit
 *token*.json

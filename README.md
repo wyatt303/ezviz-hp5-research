@@ -46,11 +46,14 @@ See [docs/findings.md](docs/findings.md) for details.
 ## Status
 
 - Camera (HPD5) firmware: obtained and statically analyzed (see docs).
-- **Indoor screen: opened and board-mapped** — boot flash is a 16 MB `25Q128` SPI NOR
-  (UF1), there's a silkscreened `Debug` UART header, dual Ethernet PHYs (YT8510C +
-  RTL8201F) and a likely WiFi module; main SoC still under its shield. Firmware not yet
-  dumped — next step is the `Debug` UART (root + `dd`) and/or a SOIC-8 clip read of the
-  NOR. See [docs/findings.md](docs/findings.md#screen-teardown). Help/photos welcome.
+- **Indoor screen: boot flash dumped and analyzed.** The 16 MB `25Q128` SPI NOR (UF1)
+  was desoldered and read (CH341A/flashrom, two byte-identical passes). Contains a
+  U-Boot 2017.09 blob and 7 JFFS2 regions. SoC is **Molchip, ARMv7, dual-core**
+  (distinct from the camera's Fullhan) — part number still unconfirmed. Next: connect
+  the silkscreened `Debug` UART header (115200 8N1) and extract `uImage`/`ramdisk.gz`
+  from the JFFS2 data. See [docs/findings.md](docs/findings.md#screen-teardown). The
+  raw dump is **not** included (contains device-unique secrets/MAC) — help/photos
+  welcome.
 
 ## Disclaimer
 

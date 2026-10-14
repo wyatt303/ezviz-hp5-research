@@ -81,7 +81,7 @@ The main PCB was opened and inspected. Key parts:
 | Ref | Part | Role |
 |---|---|---|
 | UF1 | `25Q128` (marking `MD AY2424 25Q128STG`), SOP-8 | **SPI NOR flash, 128 Mbit / 16 MB, 3.3 V, JEDEC 25-series.** Boot flash. A 2nd footprint (UF2) is unpopulated. |
-| (under main shield) | not yet read | Main SoC + DRAM (display/multimedia class, distinct from the camera's Fullhan). Remove the large metal can to read markings. |
+| (under main shield) | **Molchip, ARMv7, dual-core** (see below) | Main SoC + DRAM (display/multimedia class, distinct from the camera's Fullhan). Exact part number not yet read — need to remove the shield. |
 | U1 | module w/ QR code, 40.0 MHz crystal (`T4L`) | Likely the WiFi (+BT) SoC/module. |
 | UE3 | **Motorcomm YT8510C** | 10/100 Ethernet PHY. |
 | UE2 | **Realtek RTL8201F** | 10/100 Ethernet PHY. |
@@ -91,22 +91,102 @@ The main PCB was opened and inspected. Key parts:
 | WE 251 | Würth magnetics | Line transformer (likely for the 2-wire bus / Ethernet). |
 
 - **A UART header is silkscreened `Debug`** (with a direction arrow, next to `JP2`)
-  — the realistic root path. Probe the connector for GND (continuity to ground/shield),
-  VCC (steady ~3.3 V), TX (idles ~3.3 V, bursts at boot) and RX; attach a **3.3 V**
-  USB-UART, most likely **115200 8N1**. The boot log should reveal the SoC, bootloader,
-  and the full partition map in one shot.
-- **The 16 MB UF1 NOR can be dumped offline** with a SOIC-8 clip + CH341A/flashrom
-  (or a Pi Pico running `pico-serprog`); `flashrom` auto-detects it by JEDEC ID.
-  In-circuit reads may be corrupted by the SoC holding the bus — if so, hold the SoC
-  in reset or desolder the chip. `binwalk` the dump for U-Boot + env (bootargs) and
-  any carveable kernel/rootfs.
-- **Capacity note:** 16 MB NOR is tight for a full 7" Linux UI, so either the rootfs
-  is a compressed squashfs in this NOR, or there is an additional eMMC/NAND under the
-  main shield. The UART boot log / partition map will settle this.
+  — the realistic root path.
 - **Dual Ethernet PHYs (YT8510C + RTL8201F) + the WE line transformer + the 2-wire
   `DB-/DB+` terminal strongly suggest the camera link is Ethernet/IP carried over the
   2-wire bus** (a 2-wire extender), not a bespoke serial protocol. That is consistent
   with the outdoor unit being an ordinary EZVIZ IP camera (RTSP/CAS). Bench-confirm.
+
+### Boot flash dumped (2026-10) — UF1, 16 MB SPI NOR
+
+The UF1 NOR was desoldered and read with a SOIC-8 clip + CH341A under `flashrom`
+(`flashrom -p ch341a_spi -c GD25Q128C -r dump.bin`; flashrom offers three matching
+GigaDevice part defs — GD25B128B/GD25Q128B/GD25Q128E/GD25Q128C — they only differ in
+erase/write, the read path is identical, so any of them is fine for a dump). **Two
+independent passes produced byte-identical images (same SHA-256)** — treat that as a
+requirement, not a nicety, since a flaky clip/CH341A can silently return garbage.
+
+**Troubleshooting notes (two false leads, for next time):**
+- `/dev/ttyUSB0` is irrelevant here. The CH341A in SPI mode enumerates as USB
+  `1a86:5512` and is driven over libusb by flashrom's `ch341a_spi` programmer — not
+  a tty. A serial device only appears when the same chip is bridged into UART mode,
+  which cannot program flash.
+- The `spi_ch341` kernel module (binds the interface, creates `spi0`/`spi0.0`) does
+  **not** need to be unloaded/blacklisted — flashrom reads fine with it loaded.
+- The actual cause of early failures (`id1 0xff, id2 0xffff`, i.e. MISO stuck high,
+  no response) was **poor SOIC-8 clip contact**. Reseating the clip fixed it
+  immediately. On Linux, a udev rule (`70-flashrom.rules`) typically grants the USB
+  device ACL to the user, so `sudo` is not needed to read.
+
+### What's in the dump
+
+`binwalk` + manual inspection of the 16 MB image:
+
+```
+0x000000  header, magic "PERF"
+0x000100  ARM exception vector table (ldr pc,[pc,#0x14]) → stage-1 loader
+0x008040  LZMA blob → U-Boot 2017.09-SN49643 (built 2024-07-10, +0800), 441029 B decompressed
+0x080000  JFFS2 (LE), 1295 nodes, 5312648 B   <- primary partition
+0x5ABEC4  JFFS2 (LE), 1147 nodes, 5062984 B
+0xA9D32C  JFFS2 (LE),  222 nodes,  928992 B
+0xB91CE4  JFFS2 (LE),   26 nodes,  582440 B
+0xC347C0  JFFS2 (LE),   98 nodes,  768836 B
+0xD01B74  JFFS2 (LE),  465 nodes, 2155672 B
+0xF2EF98  JFFS2 (LE),  204 nodes,  856168 B
+```
+
+So: **JFFS2**, not SquashFS, across 7 regions/partitions (unlike the camera's
+SquashFS `.dav`). The U-Boot environment in this image has **no `mtdparts`/`mtdids`/
+`bootcmd`** — the partition table is presumably compiled into the kernel or a DTB
+embedded in the `uImage`, not set from the U-Boot env.
+
+**SoC, from the U-Boot blob:** `board=molchip`, `board_name=molchip`, `soc=molchip`,
+`cpu=armv7`, with `cpu@0` *and* `cpu@1` in the device tree → **Molchip, ARMv7,
+dual-core**. No specific part number is in the U-Boot strings (that likely needs the
+physical marking under the shield, or the DTB/kernel inside the JFFS2 regions). This
+confirms the screen uses a **different SoC vendor than the camera** (Fullhan FH865X,
+Linux 4.9.129) — two distinct platforms in the one product.
+
+**Debug UART parameters, read from the U-Boot env (not yet connected to a terminal):**
+
+```
+baudrate=115200
+bootargs=mem=86M console=ttyS0,115200 root=/dev/ram0 rw
+bootdelay=0
+serverip=192.0.0.128
+```
+
+Practical implications: console is **115200 8N1 on ttyS0**. `root=/dev/ram0` means
+the running root filesystem is a **RAM disk** — runtime changes are not persistent,
+which matters for any "root via UART + patch" plan (changes need to be written back
+to the JFFS2 image, not just made live). `bootdelay=0` means there's no autoboot
+countdown window to interrupt with a keypress — getting to the U-Boot prompt will
+need something beyond "mash a key at power-on" (e.g. holding a GPIO/strap, or a
+hardware trick covered in the methodology links below).
+
+**File names found in the JFFS2 directory-entry nodes** (names only, from
+uncompressed dirent nodes — image not mounted/extracted yet; 18 unique names across
+23 dirent nodes):
+
+```
+uImage  ramdisk.gz  start.sh  logo.dav  filelist.enc.bin
+app.tar.xz_secure  drivers.tar.xz_secure  gui_res.tar.xz_secure
+resource.tar.xz_secure  wifi.tar.xz  wifi.tar.xz_secure
+all_source.pem  dev_id_sec  dev_masterkey_sec  dev_info
+ezlink_cfg  backend_cfg  backend_cfg_backup
+```
+
+The `_secure` suffix convention and `all_source.pem` / `filelist.enc.bin` line up
+with the same signing/encryption scheme already documented for the camera (see
+[firmware-analysis-hpd5.md](firmware-analysis-hpd5.md)). Naming note: `logo.dav`
+*looks* like a Dahua artifact but `ezlink_cfg` confirms this is EZVIZ/Hikvision —
+`.dav` as an extension is a red herring here, same as on the camera.
+
+**⚠️ The raw 16 MB dump is not publishable as-is.** It contains `dev_masterkey_sec`,
+`dev_id_sec`, and this unit's real Ethernet MAC address in the U-Boot environment —
+device-specific secrets and identifiers. Only derived, redacted material (offsets,
+partition layout, version strings, a MAC-scrubbed env dump) belongs in this repo —
+never the full image.
 
 ### Methodology from sibling EZVIZ devices
 
@@ -114,6 +194,18 @@ The main PCB was opened and inspected. Key parts:
 - [EZVIZ BD-2402B1](https://blog.back.engineering/20/01/2022/) — U-Boot 115200, `rdinit=/bin/sh`.
 - [UART/U-Boot intro](https://voidstarsec.com/blog/uart-uboot-and-usb), [SPI flash extraction](https://wrongbaud.github.io/posts/router-teardown/).
 
-Open questions remaining for the screen: the exact SoC/DRAM part (under the shield),
-the `Debug` header pinout + baud, whether U-Boot is password-locked, the partition
-layout, and whether there is an eMMC/NAND in addition to the 16 MB NOR.
+### Next steps
+
+1. Carve the LZMA blob and each JFFS2 region into separate files; recover the real
+   partition boundaries (since there's no `mtdparts`, check inside `uImage`/the DTB).
+2. Extract `uImage` and `ramdisk.gz` from the JFFS2 data → kernel version, init,
+   `start.sh`, and most likely the Molchip part number.
+3. Determine whether the `_secure` payloads are encrypted or only signed — this
+   decides whether "stock firmware + a UART-delivered helper" is the only viable
+   local path, same as on the camera.
+4. Connect the `Debug` header at 115200 8N1 to confirm the env above and capture a
+   live boot log; figure out how to break into the U-Boot prompt with `bootdelay=0`.
+
+Open questions remaining: the exact Molchip part number, how to interrupt U-Boot
+with no autoboot window, whether U-Boot is otherwise locked down, and whether the
+`_secure` files are encrypted (like the camera's `ezapp.xz_secure`) or just signed.
