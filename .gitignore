@@ -1,0 +1,24 @@
+# Firmware blobs — never commit (obtain via docs/download-and-unpack.md)
+*.dav
+*.img
+*.payload
+uImage
+mImage
+squashfs-root/
+
+# Secrets / account data — never commit
+*token*.json
+devices.json
+pagelist.json
+*.keystore
+*.flow
+captures/
+
+# Private media captured from the device
+*.ts
+*.ps
+
+# Python / env
+.venv/
+__pycache__/
+*.pyc
