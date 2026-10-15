@@ -30,6 +30,12 @@ drzwiowego" = camera, "Wersja ekranu" = screen).
 - Net result: once you know a firmware's MD5 (i.e. the moment EZVIZ publishes an
   update) you can download it instantly from the open CDN. The firmware here
   (HPD5 V5.3.6 build 260512) was obtained this way.
+- The screen's own local update-check config independently confirms this scheme:
+  it stores its *currently installed* build's own download URL/MD5 in the same
+  `devupgrade-ali.ys7.com/<md5>/digicap.dav` form — `5fe8f6cd71c601e67d71e2e29f0b28b1`
+  for `V1.0.1 build 260417`. Since this value describes the build already running
+  (not a pending update), it isn't retrievable through the app's upgrade-check API
+  above; it only shows up in the device's own on-device state.
 
 The Android app (`com.ezviz`) trusts only `system` CAs in its
 `network_security_config` and has a signature/anti-tamper check that self-kills a
