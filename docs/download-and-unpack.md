@@ -18,11 +18,16 @@ returns nothing.
 
 ### Option A — you already have the MD5
 
-For example, HPD5 `V5.3.6 build 260512` is:
+For example:
 
 ```
+HPD5 (camera) V5.3.6 build 260512:
 MD5  = 06512eb8a04adb47e723d331fc8f4ce5
 size = 9,579,164 bytes
+
+HP5 (screen) V1.0.1 build 260417:
+MD5  = 5fe8f6cd71c601e67d71e2e29f0b28b1
+size = 13,031,126 bytes
 ```
 
 Skip to step 2.
